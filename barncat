@@ -1,0 +1,39 @@
+#!/bin/bash
+
+input="./matter"
+output="./website"
+layouts="./layouts"
+
+#for file in $(find -wholename "$input/*") ; do
+ #  markdowns=$(sed 's@.*\.@@' $file)
+ # if [  = ".md" ] ; then
+ #   build_page($file)
+ # fi
+  # mkdir -p ""
+#done
+
+function printCommands {
+  printf "./barncat <command>\n\n"
+  printf "  build        alias for delta-build\n"
+  printf "  delta-build  rebuild modified files (deleted files removed)\n"
+  printf "  full-build   rebuild entire website\n"
+  printf "  delta-cache  adds modified files to cache (deleted files removed)\n"
+  printf "  full-cache   rebuilds entire cache\n"
+}
+
+function buildCache {
+  if [ $1 = true ] || [ ; then
+    echo "correct!"
+  else 
+    echo "wrong!!!"
+  fi 
+}
+
+case "$1" in
+	build) echo "hello" ;;
+	rebuild) echo "verbose hello" ;;
+  cache) buildCache true ;;
+  not-cache) buildCache false ;;
+	*) printCommands ;;
+
+esac
