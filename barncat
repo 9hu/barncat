@@ -1,5 +1,8 @@
 #!/bin/bash
 
+html_ext=".html"
+markdown_ext=".md"
+
 input="./matter"
 output="./website"
 layouts="./layouts"
@@ -12,7 +15,7 @@ layouts="./layouts"
   # mkdir -p ""
 #done
 
-function printCommands {
+function print_commands {
   printf "./barncat <command>\n\n"
   printf "  build        alias for delta-build\n"
   printf "  delta-build  rebuild modified files (deleted files removed)\n"
@@ -21,19 +24,36 @@ function printCommands {
   printf "  full-cache   rebuilds entire cache\n"
 }
 
-function buildCache {
-  if [ $1 = true ] || [ ; then
-    echo "correct!"
-  else 
-    echo "wrong!!!"
-  fi 
+function markdown_assets {
+  markdown_cache="$(echo "$1 markdown" | sha1sum)"
+  variable_cache="$(echo "$1 variable" | sha1sum)"
+  html_file="$(echo $1 | sed "s|$input|$output|g ; s|$markdown_ext|$html_ext|g")"
+}
+
+function build_cache {
+  cache_total=0
+  cache_updated=0
+  printf "updating cache"
+  for markdown_file in $(find -wholename "$input/*$markdown_ext") ; do
+    markdown_assets $markdown_file
+    if [ $1 = false ] || [ "$markdown_file" -nt "$html_file" ] ; then
+      echo $markdown_cache
+      echo $variable_cache
+      echo $html_file
+      echo $markdown_file
+      cache_updated=$((cache_updated+1))
+    fi
+    cache_total=$((cache_total+1))
+  done
+  printf "$cache_total markdown files found in $input\n"
+  printf "$cache_updated/$cache_total markdown cache files generated\n"
 }
 
 case "$1" in
 	build) echo "hello" ;;
 	rebuild) echo "verbose hello" ;;
-  cache) buildCache true ;;
-  not-cache) buildCache false ;;
-	*) printCommands ;;
+  cache) build_cache true ;;
+  not-cache) build_cache false ;;
+	*) print_commands ;;
 
 esac
