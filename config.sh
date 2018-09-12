@@ -6,8 +6,8 @@ markdown_ext='.md'
 html_ext='.html'
 
 # bash commands, filename placed after string when ran
-markdown_converter='markdown'
-html_cleanup='tidy -w 0 --tidy-mark no -m'
+markdown_converter='kramdown'
+html_cleanup='tidy -q --show-warnings no -w 0 --tidy-mark no -m'
 
 # where are things located?
 # ensure it ends with a "/"
@@ -21,11 +21,3 @@ cache='./.cache/'
 declare -A layout
 # layout[path/to/files/]=layout.html
 layout[blog/]=blog-post.html
-layout[about/]=about-page.html
-
-# generate indices
-declare -A index
-# index[index-name]="path/to/files/ variable-to-sort-by"
-index[blog-roll]=("blog/"
-                  "* [{{ title }}]({{ url }}) ({{ creation-date }})"
-                  "{{ creation-date }}")

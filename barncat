@@ -1,59 +1,79 @@
 #!/bin/bash
 
-html_ext=".html"
-markdown_ext=".md"
+#  _._     _,-'""`-._
+# (,-.`._,'(       |\`-/|  barncat
+#     `-.-' \ )-`( , o o)
+# -bf-      `-    \`_`"'-
 
-input="./matter"
-output="./website"
-layouts="./layouts"
+done="\033[0;32mdone\033[0m"
+error="\033[0;31merror\033[0m"
 
-#for file in $(find -wholename "$input/*") ; do
- #  markdowns=$(sed 's@.*\.@@' $file)
- # if [  = ".md" ] ; then
- #   build_page($file)
- # fi
-  # mkdir -p ""
-#done
+printf "reading config.sh... "
+source ./config.sh
+printf "$done\n"
 
 function print_commands {
   printf "./barncat <command>\n\n"
-  printf "  build        alias for delta-build\n"
-  printf "  delta-build  rebuild modified files (deleted files removed)\n"
-  printf "  full-build   rebuild entire website\n"
-  printf "  delta-cache  adds modified files to cache (deleted files removed)\n"
-  printf "  full-cache   rebuilds entire cache\n"
+  printf "  build    generate only modified parts of input, removing nothing\n"
+  printf "  rebuild  generate entire website from input, purging all beforehand\n"
 }
 
-function markdown_assets {
-  markdown_cache="$(echo "$1 markdown" | sha1sum)"
-  variable_cache="$(echo "$1 variable" | sha1sum)"
-  html_file="$(echo $1 | sed "s|$input|$output|g ; s|$markdown_ext|$html_ext|g")"
+function generate-vars {
+  stripped="$(echo $1 | sed "s|$input||g ; s|$markdown_ext|$html_ext|g")"
+  url="/$stripped"
+  html="$output$stripped"
+  sed_title="s|{{ title }}|sample title template thing|g"
+  sed_creation="$(echo "s|{{ creation date }}|$(stat -c %y $1 | sed 's/\s.*$//')|g")"
+  sed_modified="$(echo "s|{{ modified date }}|$(stat -c %y $1 | sed 's/\s.*$//')|g")"
+  sed_string="$sed_title ; $sed_creation ; $sed_modified"
 }
 
-function build_cache {
-  cache_total=0
-  cache_updated=0
-  printf "updating cache"
-  for markdown_file in $(find -wholename "$input/*$markdown_ext") ; do
-    markdown_assets $markdown_file
-    if [ $1 = false ] || [ "$markdown_file" -nt "$html_file" ] ; then
-      echo $markdown_cache
-      echo $variable_cache
-      echo $html_file
-      echo $markdown_file
-      cache_updated=$((cache_updated+1))
-    fi
-    cache_total=$((cache_total+1))
+function generate-page { # $1 = layout file
+  generate-vars $file
+  if [ "$file" -nt "$html" ] ; then
+    temp=$(mktemp)
+    cat "$layouts$1" > $html
+    sed -i "$sed_string" $html
+    eval $markdown_converter $file > $temp
+    sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
+    eval $html_cleanup $html
+  fi
+}
+
+function build-site {
+  for dir in $output $cache ; do 
+    if [ ! -d $dir ] ; then 
+      mkdir $dir ; 
+    fi 
   done
-  printf "$cache_total markdown files found in $input\n"
-  printf "$cache_updated/$cache_total markdown cache files generated\n"
+  # duplidate directory structure, if it doesn't already exist
+  (cd $input && find . -type d -exec mkdir -p ../$output{} \;)
+  for path in "${!layout[@]}" ; do 
+    for file in $(find -type f -wholename "$input$path*$markdown_ext") ; do
+      generate-page ${layout[$path]}
+    done
+  done
+  for file in $(find -type f -wholename "$input*") ; do
+    if [[ $file == *$markdown_ext ]] ; then
+      generate-page $mdfile default.html
+    else
+      output_file="$(echo $file | sed "s|$input|$output|g")"
+      if [ "$file" -nt "$output_file" ] ; then
+        cp $file $output_file
+      fi
+    fi
+  done
+}
+
+function clear-site { # purge the cache, purge the site
+  printf "purging output + cache... "
+  rm -f -r $output* $cache*
+  printf "$done\n"
 }
 
 case "$1" in
-	build) echo "hello" ;;
-	rebuild) echo "verbose hello" ;;
-  cache) build_cache true ;;
-  not-cache) build_cache false ;;
+	build) build-site ;;
+	rebuild) clear-site ; build-site ;;
 	*) print_commands ;;
 
 esac
