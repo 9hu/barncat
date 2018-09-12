@@ -8,14 +8,27 @@
 done="\033[0;32mdone\033[0m"
 error="\033[0;31merror\033[0m"
 
+# markdown files counted[0] new/modified[1] deleted[2] failed[3]
+#    other files counted[4] new/modified[5] deleted[6] failed[7]
+counter=(0 0 0 0 0 0 0 0)
+
 printf "reading config.sh... "
-source ./config.sh
-printf "$done\n"
+if [ -f ./config.sh ]; then
+  source ./config.sh
+else
+  printf "\n$error: no ./config.sh file!\n" ; exit
+fi
+printf "\r$done reading config.sh\n"
 
 function print_commands {
-  printf "./barncat <command>\n\n"
+  printf "./barncat <command>\n"
   printf "  build    generate only modified parts of input, removing nothing\n"
   printf "  rebuild  generate entire website from input, purging all beforehand\n"
+}
+
+function print-stats {
+  printf "${counter[1]}/${counter[0]} markdowns converted, ${counter[3]} failed, "
+  printf "${counter[5]}/${counter[4]} others updated. $done\n"
 }
 
 function generate-vars {
@@ -31,22 +44,27 @@ function generate-vars {
 function generate-page { # $1 = layout file
   generate-vars $file
   if [ "$file" -nt "$html" ] ; then
+    printf "\rgenerating a markdown file..."
     temp=$(mktemp)
     cat "$layouts$1" > $html
     sed -i "$sed_string" $html
     eval $markdown_converter $file > $temp
-    sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
+    if grep -q "{{ content }}" "$html" ; then
+      sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
+    else
+      printf "\n$error: no \'{{ content }}\' tag in $layouts$1, "
+      printf "$url failed to build\n"
+      ((counter[3]++))
+      return 1
+    fi
     eval $html_cleanup $html
+    ((counter[1]++))
   fi
 }
 
 function build-site {
-  for dir in $output $cache ; do 
-    if [ ! -d $dir ] ; then 
-      mkdir $dir ; 
-    fi 
-  done
-  # duplidate directory structure, if it doesn't already exist
+  printf "building website..."
+  # duplicate directory structure, if it doesn't already exist
   (cd $input && find . -type d -exec mkdir -p ../$output{} \;)
   for path in "${!layout[@]}" ; do 
     for file in $(find -type f -wholename "$input$path*$markdown_ext") ; do
@@ -56,19 +74,25 @@ function build-site {
   for file in $(find -type f -wholename "$input*") ; do
     if [[ $file == *$markdown_ext ]] ; then
       generate-page $mdfile default.html
+      ((counter[0]++))
     else
       output_file="$(echo $file | sed "s|$input|$output|g")"
       if [ "$file" -nt "$output_file" ] ; then
+        printf "\rcopying a non-markdown file... "
         cp $file $output_file
+        ((counter[5]++))
       fi
+      ((counter[4]++))
     fi
   done
+  printf "\r$done building website             \n"
+  print-stats
 }
 
 function clear-site { # purge the cache, purge the site
-  printf "purging output + cache... "
-  rm -f -r $output* $cache*
-  printf "$done\n"
+  printf "purging output..."
+  rm -f -r $output*
+  printf "\r$done purging output\n"
 }
 
 case "$1" in
