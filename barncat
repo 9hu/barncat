@@ -6,61 +6,65 @@
 # -bf-      `-    \`_`"'-
 
 done="\033[0;32mdone\033[0m"
-done="\033[0;32mgood\033[0m"
+good="\033[0;32mgood\033[0m"
 error="\033[0;31merror\033[0m"
 
-
 function print-commands {
-  printf "barncat options:\n"
-  printf " --full         full build, as opposed to an incremental build\n"
-  printf " --error-check  makes sure things are where they should be\n"
-  printf " --help         shows this output\n"
+  printf "barncat commands: ./barncat <command>\n"
+  printf " build        incremental build\n"
+  printf " full         full build, as opposed to an incremental build\n"
+  printf " error-check  makes sure things are where they should be\n"
   exit 0
 }
 
 function generate-vars {
-  url="$(echo $html | sed "s|$dir_output||g")"
   sed_title="s|{{ title }}|sample title template thing|g"
-  sed_creation="$(echo "s|{{ creation date }}|$(stat -c %y $file | sed 's/\s.*$//')|g")"
-  sed_modified="$(echo "s|{{ modified date }}|$(stat -c %y $file | sed 's/\s.*$//')|g")"
+  sed_creation="$(echo "s|{{ creation date }}|$(stat -c %y $input_file | sed 's/\s.*$//')|g")"
+  sed_modified="$(echo "s|{{ modified date }}|$(stat -c %y $input_file | sed 's/\s.*$//')|g")"
   sed_string="$sed_title ; $sed_creation ; $sed_modified"
 }
 
 function generate-page {
+  html="$dir_temp$rel_url"
   temp=$(mktemp) ; trap "rm -rf $temp" EXIT
   cat "$dir_layouts/${layouts[i+1]}" > $html
   sed -i "$sed_string" $html
-  eval $markdown_converter $file > $temp
+  eval $markdown_converter $input_file > $temp
   sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
   eval $html_cleanup $html
 }
 
-function build-file {
-  if [[ $file == *$ext_markdown ]] ; then
-    html="$(echo $file | sed "s|$tempd|$dir_output|g;s|$ext_markdown|$ext_html|g")"
-    if [[ $file -nt $html ]] ; then
-      generate-vars
-      generate-page
+function build-markdowns {
+  for (( i=0 ; i<${#layouts[@]} ; i=$((i+2)) )) ; do
+    for input_file in $(find "$dir_temp${layouts[i]}" -type f) ; do
+      if [[ $input_file == *$ext_markdown ]] ; then
+        rel_url="$(echo $input_file | sed "s|$dir_temp||g;s|$ext_markdown|$ext_html|g")"
+        if [[ $input_file -nt $dir_output$rel_url ]] ; then
+          generate-vars
+          generate-page
+        fi
+        rm -f $input_file
+      fi
+    done
+  done
+}
+
+function build-site {
+  for input_file in $(find "$dir_temp" -type f) ; do
+    output_file=$(echo $input_file | sed "s|$dir_temp|$dir_output|g")
+    if [[ $input_file -nt $output_file ]] ; then
+      cp $input_file $output_file
     fi
-  else
-    output_file=$(echo $file | sed "s|$tempd|$dir_output|g")
-    echo #output_file
-    if [[ $file -nt $output_file ]] ; then
-      cp $file $output_file
-    fi
-  fi
+  done
 }
 
 function clone-input {
   tempd=$(mktemp -d)
-  trap "rm -rf $tempd" EXIT
-  cp -a "$dir_input/." $tempd
+  trap "rm -rf $dir_temp" EXIT
+  cp -a "$dir_input/." $dir_temp
 }
 
-function build-site {
-  clone-input # $dir_input -> $tempd
-  # execute-scripts here !
-
+function copy-dir-structure {
   dir_barncat=$(pwd)
   cd $dir_input
   paths=$(find . -type d)
@@ -69,73 +73,14 @@ function build-site {
     mkdir -p $path
   done
   cd $dir_barncat
-  
-# (cd $dir_input && find . -type d -exec mkdir -p ../$dir_output/{} \;)
-
-  for (( i=0 ; i<${#layouts[@]} ; i=$((i+2)) )) ; do
-    for file in $(find "$tempd${layouts[i]}" -type f) ; do
-      build-file
-    done
-  done
-  rm -rf $tempd
-  # printf "\r$done locating input files ($(wc -l < $inputs) files)\n"
-
-# printf "copying non-markdown files to output... "
-# counter[0]=0 ; counter[1]=0
-# while read file ; do
-#   if [[ $file != *$markdown_ext ]] ; then
-#     output_file=$(echo $file | sed "s|$input|$output|g")
-#     if [[ $file -nt $output_file ]] ; then
-#       cp $file $output_file
-#       ((counter[0]++))
-#     fi
-#     ((counter[1]++))
-#   fi
-# done < $inputs
-# sed -i -n "/$markdown_ext$/p" $inputs
-# printf "\r$done copied non-markdown files "
-# printf "(${counter[0]}/${counter[1]} files)\n"
-#
-# counter[0]=0 ; counter[1]=0
-# printf "rendering markdown files to output... "
-# for (( i=0 ; i<${#layout[@]} ; i=$((i+2)) )) ; do
-#   while read file ; do
-#     if [[ $file == $input${layout[$i]}* ]] ; then
-#       generate-vars $file
-#       if [ "$file" -nt "$html" ] ; then
-#         generate-page ${layout[$i+1]}
-#         ((counter[0]++))
-#       fi
-#       ((counter[1]++))
-#     fi
-#   done < $inputs
-#   sed -i "\|$input${layout[$i]}|d" $inputs
-# done
-# printf "\r$done rendered markdown files "
-# printf "(${counter[0]}/${counter[1]} files)\n"
-  printf "$done built website\n"
 }
+
 
 function purge-site { # purge the site
   printf "purging output..."
   rm -f -r $dir_output/*
   printf "\r$done purging output\n"
 }
-
-# while test $# -gt 0 ; do
-#   case "$1" in
-#     --full)
-#       purge-site ;;
-#     -error-check)
-#       error-check ;;
-#     --help)
-#       print-commands ;;
-#     *)
-#       break ;;
-#      # printf "$error: $1 is not a valid command\n"
-#      # printf "run ./barncat --help for valid commands\n" ;;
-#   esac
-# done
 
 function error-check {
   printf "checking confif.sh... "
@@ -145,25 +90,25 @@ function error-check {
     printf "\n$error ./config.sh is missing!\nexiting...\n" ; exit
   fi
 
-# printf "\nchecking variables in config.sh... "
-# for var in markdown_ext html_ext markdown_converter html_ext balhahsh ; do
-#   if [ ! -v $var ] ; then
-#     printf "\n$error $var is not a variable in ./config.sh"
-#   fi
-# done
-
   for dir in $dir_input $dir_output $dir_layouts $dir_scripts ; do
     if [ ! -d $dir ] ; then
       printf "\n$error $dir directory does not exist, please create it"
     fi
   done
+}
 
-
+function main {
+  clone-input #         $dir_input/files.all -> $dir_temp/files.all
+  copy-dir-structure #     $dir_input/paths/ -> $dir_output/paths/
+  execute-scripts #              eval $dir_scripts/script.sh
+  build-markdowns #        $dir_temp/file.md -> $dir_temp/file.html
+  build-site #            $dir_temp/file.all -> $dir_output/file.all
+  rm -rf $dir_temp
 }
 
 case "$1" in
-  build) source ./config.sh ; build-site ;;
-  full) source ./config.sh ; purge-site ; build-site ;;
+  build) source ./config.sh ; main ;;
+  full) source ./config.sh ; purge-site ; main ;;
   error-check) error-check ;;
   *) print-commands ;;
 
