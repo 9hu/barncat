@@ -13,7 +13,6 @@ html_cleanup='tidy -q --show-warnings no -w 0 --tidy-mark no -m'
 input='./input'
 output='./output'
 layouts='./layouts'
-cache='./.cache'
 
 # enforce a specific layout on files
 # when unspecified, layout defaults to default.html
@@ -21,3 +20,4 @@ declare -a layout;
 # layout[path/to/files/]=layout.html
 layout+=(/blog/ blog-post.html)
 layout+=(/ default.html)
+layout+=(/about/ no-theme.html)

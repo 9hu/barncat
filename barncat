@@ -16,15 +16,15 @@ else
 fi
 printf "\r$done reading config.sh\n"
 
-function print_commands {
+function print-commands {
   printf "./barncat <command>\n"
-  printf "  build    generate only modified parts of input, removing nothing\n"
-  printf "  rebuild  generate entire website from input, purging all beforehand\n"
+  printf "  build       alias for full-build\n"
+  printf "  full-build  delete current output, build entire website\n"
+  printf "  delta-build build only new/modified parts, remove nothing\n"
 }
 
-function print-stats {
-  printf "${counter[1]}/${counter[0]} markdowns converted, ${counter[3]} failed, "
-  printf "${counter[5]}/${counter[4]} others updated. $done\n"
+function generate-index {
+   
 }
 
 function generate-vars {
@@ -37,18 +37,14 @@ function generate-vars {
 }
 
 function generate-page { # $1 = layout file
-  printf "\rgenerating a markdown file..."
   temp=$(mktemp) ; trap "rm -f $temp" EXIT
   cat "$layouts/$1" > $html
   sed -i "$sed_string" $html
-  eval $markdown_converter $file > $temp
-  if grep -q "{{ content }}" "$html" ; then
-    sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
-  else
-    printf "\n$error: no \'{{ content }}\' tag in $layouts/$1, "
-    printf "$url failed to build\n"
-    return 1
+  if [[ $file == *index$markdown_ext ]] ; then
+    # build index
   fi
+  eval $markdown_converter $file > $temp
+  sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
   eval $html_cleanup $html
 }
 
@@ -92,45 +88,21 @@ function build-site {
     done < $inputs
     sed -i "\|$input${layout[$i]}|d" $inputs
   done
-  printf "\r$done rendered markdown files to output\n"
-  printf "$done building website\n"
-
-#
-#
-#
-# while read $inputs ; do
-# for path in "${!layout[@]}" ; do 
-#   for file in $(find -type f -wholename "$input$path*$markdown_ext") ; do
-#     generate-page ${layout[$path]}
-#   done
-# done
-# for file in $(find -type f -wholename "$input*") ; do
-#   if [[ $file == *$markdown_ext ]] ; then
-#     generate-page $mdfile default.html
-#     ((counter[0]++))
-#   else
-#     output_file="$(echo $file | sed "s|$input|$output|g")"
-#     if [ "$file" -nt "$output_file" ] ; then
-#       printf "\rcopying a non-markdown file... "
-#       cp $file $output_file
-#       ((counter[5]++))
-#     fi
-#     ((counter[4]++))
-#   fi
-# done
-# printf "\r$done building website             \n"
-# print-stats
+  printf "\r$done rendered markdown files "
+  printf "(${counter[0]}/${counter[1]} files)\n"
+  printf "$done built website\n"
 }
 
-function clear-site { # purge the cache, purge the site
+function purge-site { # purge the site
   printf "purging output..."
-  rm -f -r $output*
+  rm -f -r $output/*
   printf "\r$done purging output\n"
 }
 
 case "$1" in
-  build) build-site ;;
-	rebuild) clear-site ; build-site ;;
-	*) print_commands ;;
+  delta-build) build-site ;;
+  build) purge-site ; build-site ;;
+	full-build) purge-site ; build-site ;;
+	*) print-commands ;;
 
 esac
