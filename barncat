@@ -6,25 +6,20 @@
 # -bf-      `-    \`_`"'-
 
 done="\033[0;32mdone\033[0m"
+done="\033[0;32mgood\033[0m"
 error="\033[0;31merror\033[0m"
 
-printf "reading config.sh... "
-if [ -f ./config.sh ]; then
-  source ./config.sh
-else
-  printf "\n$error: no ./config.sh file!\n" ; exit
-fi
-printf "\r$done reading config.sh\n"
 
 function print-commands {
-  printf "./barncat <command>\n"
-  printf "  build       alias for full-build\n"
-  printf "  full-build  delete current output, build entire website\n"
-  printf "  delta-build build only new/modified parts, remove nothing\n"
+  printf "barncat options:\n"
+  printf " --full         full build, as opposed to an incremental build\n"
+  printf " --error-check  makes sure things are where they should be\n"
+  printf " --help         shows this output\n"
+  exit 0
 }
 
 function generate-vars {
-  url="$(echo $html | sed "s|$output||g")"
+  url="$(echo $html | sed "s|$dir_output||g")"
   sed_title="s|{{ title }}|sample title template thing|g"
   sed_creation="$(echo "s|{{ creation date }}|$(stat -c %y $file | sed 's/\s.*$//')|g")"
   sed_modified="$(echo "s|{{ modified date }}|$(stat -c %y $file | sed 's/\s.*$//')|g")"
@@ -33,7 +28,7 @@ function generate-vars {
 
 function generate-page {
   temp=$(mktemp) ; trap "rm -rf $temp" EXIT
-  cat "$layouts/${layout[i+1]}" > $html
+  cat "$dir_layouts/${layouts[i+1]}" > $html
   sed -i "$sed_string" $html
   eval $markdown_converter $file > $temp
   sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
@@ -41,14 +36,15 @@ function generate-page {
 }
 
 function build-file {
-  if [[ $file == *$markdown_ext ]] ; then
-    html="$(echo $file | sed "s|$tempd|$output|g;s|$markdown_ext|$html_ext|g")"
+  if [[ $file == *$ext_markdown ]] ; then
+    html="$(echo $file | sed "s|$tempd|$dir_output|g;s|$ext_markdown|$ext_html|g")"
     if [[ $file -nt $html ]] ; then
       generate-vars
       generate-page
     fi
   else
-    output_file=$(echo $file | sed "s|$tempd|$output|g")
+    output_file=$(echo $file | sed "s|$tempd|$dir_output|g")
+    echo #output_file
     if [[ $file -nt $output_file ]] ; then
       cp $file $output_file
     fi
@@ -58,18 +54,26 @@ function build-file {
 function clone-input {
   tempd=$(mktemp -d)
   trap "rm -rf $tempd" EXIT
-  cp -a "$input/." $tempd
+  cp -a "$dir_input/." $tempd
 }
 
 function build-site {
-  clone-input
-  (cd $input && find . -type d -exec mkdir -p ../$output/{} \;)
+  clone-input # $dir_input -> $tempd
+  # execute-scripts here !
 
-  for (( i=0 ; i<${#layout[@]} ; i=$((i+2)) )) ; do
-    echo $tempd
-    echo ${layout[i]}
-    for file in $(find -type f -path "$tempd${layout[i]}") ; do
-      echo ppppp
+  dir_barncat=$(pwd)
+  cd $dir_input
+  paths=$(find . -type d)
+  cd $dir_barncat ; cd $dir_output
+  for path in $paths ; do
+    mkdir -p $path
+  done
+  cd $dir_barncat
+  
+# (cd $dir_input && find . -type d -exec mkdir -p ../$dir_output/{} \;)
+
+  for (( i=0 ; i<${#layouts[@]} ; i=$((i+2)) )) ; do
+    for file in $(find "$tempd${layouts[i]}" -type f) ; do
       build-file
     done
   done
@@ -114,16 +118,53 @@ function build-site {
 
 function purge-site { # purge the site
   printf "purging output..."
-  rm -f -r $output/*
+  rm -f -r $dir_output/*
   printf "\r$done purging output\n"
 }
 
+# while test $# -gt 0 ; do
+#   case "$1" in
+#     --full)
+#       purge-site ;;
+#     -error-check)
+#       error-check ;;
+#     --help)
+#       print-commands ;;
+#     *)
+#       break ;;
+#      # printf "$error: $1 is not a valid command\n"
+#      # printf "run ./barncat --help for valid commands\n" ;;
+#   esac
+# done
+
+function error-check {
+  printf "checking confif.sh... "
+  if [ -f ./config.sh ] ; then
+    source ./config.sh
+  else
+    printf "\n$error ./config.sh is missing!\nexiting...\n" ; exit
+  fi
+
+# printf "\nchecking variables in config.sh... "
+# for var in markdown_ext html_ext markdown_converter html_ext balhahsh ; do
+#   if [ ! -v $var ] ; then
+#     printf "\n$error $var is not a variable in ./config.sh"
+#   fi
+# done
+
+  for dir in $dir_input $dir_output $dir_layouts $dir_scripts ; do
+    if [ ! -d $dir ] ; then
+      printf "\n$error $dir directory does not exist, please create it"
+    fi
+  done
+
+
+}
 
 case "$1" in
-  delta-build) build-site ;;
-  build) purge-site ; build-site ;;
-	full-build) purge-site ; build-site ;;
-  clone) clone-input ;;
-	*) print-commands ;;
+  build) source ./config.sh ; build-site ;;
+  full) source ./config.sh ; purge-site ; build-site ;;
+  error-check) error-check ;;
+  *) print-commands ;;
 
 esac
