@@ -23,73 +23,92 @@ function print-commands {
   printf "  delta-build build only new/modified parts, remove nothing\n"
 }
 
-function generate-index {
-   
-}
-
 function generate-vars {
-  url="$(echo $1 | sed "s|$input||g ; s|$markdown_ext|$html_ext|g")"
-  html="$output$url"
+  url="$(echo $html | sed "s|$output||g")"
   sed_title="s|{{ title }}|sample title template thing|g"
-  sed_creation="$(echo "s|{{ creation date }}|$(stat -c %y $1 | sed 's/\s.*$//')|g")"
-  sed_modified="$(echo "s|{{ modified date }}|$(stat -c %y $1 | sed 's/\s.*$//')|g")"
+  sed_creation="$(echo "s|{{ creation date }}|$(stat -c %y $file | sed 's/\s.*$//')|g")"
+  sed_modified="$(echo "s|{{ modified date }}|$(stat -c %y $file | sed 's/\s.*$//')|g")"
   sed_string="$sed_title ; $sed_creation ; $sed_modified"
 }
 
-function generate-page { # $1 = layout file
-  temp=$(mktemp) ; trap "rm -f $temp" EXIT
-  cat "$layouts/$1" > $html
+function generate-page {
+  temp=$(mktemp) ; trap "rm -rf $temp" EXIT
+  cat "$layouts/${layout[i+1]}" > $html
   sed -i "$sed_string" $html
-  if [[ $file == *index$markdown_ext ]] ; then
-    # build index
-  fi
   eval $markdown_converter $file > $temp
   sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
   eval $html_cleanup $html
 }
 
+function build-file {
+  if [[ $file == *$markdown_ext ]] ; then
+    html="$(echo $file | sed "s|$tempd|$output|g;s|$markdown_ext|$html_ext|g")"
+    if [[ $file -nt $html ]] ; then
+      generate-vars
+      generate-page
+    fi
+  else
+    output_file=$(echo $file | sed "s|$tempd|$output|g")
+    if [[ $file -nt $output_file ]] ; then
+      cp $file $output_file
+    fi
+  fi
+}
+
+function clone-input {
+  tempd=$(mktemp -d)
+  trap "rm -rf $tempd" EXIT
+  cp -a "$input/." $tempd
+}
+
 function build-site {
-  # duplicate directory structure, if it doesn't already exist
+  clone-input
   (cd $input && find . -type d -exec mkdir -p ../$output/{} \;)
 
-  printf "locating input files... "
-  inputs=$(mktemp) ; trap "rm -f $inputs" EXIT
-  find -type f -wholename "$input*" > $inputs
-  printf "\r$done locating input files ($(wc -l < $inputs) files)\n"
-
-  printf "copying non-markdown files to output... "
-  counter[0]=0 ; counter[1]=0
-  while read file ; do
-    if [[ $file != *$markdown_ext ]] ; then
-      output_file=$(echo $file | sed "s|$input|$output|g")
-      if [[ $file -nt $output_file ]] ; then
-        cp $file $output_file
-        ((counter[0]++))
-      fi
-      ((counter[1]++))
-    fi
-  done < $inputs
-  sed -i -n "/$markdown_ext$/p" $inputs
-  printf "\r$done copied non-markdown files "
-  printf "(${counter[0]}/${counter[1]} files)\n"
-
-  counter[0]=0 ; counter[1]=0
-  printf "rendering markdown files to output... "
   for (( i=0 ; i<${#layout[@]} ; i=$((i+2)) )) ; do
-    while read file ; do
-      if [[ $file == $input${layout[$i]}* ]] ; then
-        generate-vars $file
-        if [ "$file" -nt "$html" ] ; then
-          generate-page ${layout[$i+1]}
-          ((counter[0]++))
-        fi
-        ((counter[1]++))
-      fi
-    done < $inputs
-    sed -i "\|$input${layout[$i]}|d" $inputs
+    echo $tempd
+    echo ${layout[i]}
+    for file in $(find -type f -path "$tempd${layout[i]}") ; do
+      echo ppppp
+      build-file
+    done
   done
-  printf "\r$done rendered markdown files "
-  printf "(${counter[0]}/${counter[1]} files)\n"
+  rm -rf $tempd
+  # printf "\r$done locating input files ($(wc -l < $inputs) files)\n"
+
+# printf "copying non-markdown files to output... "
+# counter[0]=0 ; counter[1]=0
+# while read file ; do
+#   if [[ $file != *$markdown_ext ]] ; then
+#     output_file=$(echo $file | sed "s|$input|$output|g")
+#     if [[ $file -nt $output_file ]] ; then
+#       cp $file $output_file
+#       ((counter[0]++))
+#     fi
+#     ((counter[1]++))
+#   fi
+# done < $inputs
+# sed -i -n "/$markdown_ext$/p" $inputs
+# printf "\r$done copied non-markdown files "
+# printf "(${counter[0]}/${counter[1]} files)\n"
+#
+# counter[0]=0 ; counter[1]=0
+# printf "rendering markdown files to output... "
+# for (( i=0 ; i<${#layout[@]} ; i=$((i+2)) )) ; do
+#   while read file ; do
+#     if [[ $file == $input${layout[$i]}* ]] ; then
+#       generate-vars $file
+#       if [ "$file" -nt "$html" ] ; then
+#         generate-page ${layout[$i+1]}
+#         ((counter[0]++))
+#       fi
+#       ((counter[1]++))
+#     fi
+#   done < $inputs
+#   sed -i "\|$input${layout[$i]}|d" $inputs
+# done
+# printf "\r$done rendered markdown files "
+# printf "(${counter[0]}/${counter[1]} files)\n"
   printf "$done built website\n"
 }
 
@@ -99,10 +118,12 @@ function purge-site { # purge the site
   printf "\r$done purging output\n"
 }
 
+
 case "$1" in
   delta-build) build-site ;;
   build) purge-site ; build-site ;;
 	full-build) purge-site ; build-site ;;
+  clone) clone-input ;;
 	*) print-commands ;;
 
 esac
