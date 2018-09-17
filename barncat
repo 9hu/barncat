@@ -5,111 +5,147 @@
 #     `-.-' \ )-`( , o o)
 # -bf-      `-    \`_`"'-
 
-done="\033[0;32mdone\033[0m"
-good="\033[0;32mgood\033[0m"
+# config -----------------------------------------------------------
+
+ext_markdown='.md'
+ext_html='.html'
+
+markdown_converter='kramdown'
+html_cleanup='tidy -q --show-warnings no -w 0 --tidy-mark no'
+
+dir_input='./input'
+dir_output='./output'
+dir_fragments='./fragments'
+
+#-------------------------------------------------------------------
+
+doing="\033[0;93mdoing\033[0m"
+done="\033[0;32mdone!\033[0m"
 error="\033[0;31merror\033[0m"
 
-function print-commands {
-  printf "barncat commands: ./barncat <command>\n"
-  printf " build        incremental build\n"
-  printf " full         full build, as opposed to an incremental build\n"
-  printf " error-check  makes sure things are where they should be\n"
-  exit 0
+function replace-variables { # $1 = file to replace variables in
+  var_sed="
+  s|{{ title }}|sample title template thing|g ;
+  s|{{ modified date }}|$(date -r $input +"%Y-%d-%m")|g
+  "
+  sed -i -e "$var_sed" $1
 }
 
-function generate-vars {
-  sed_title="s|{{ title }}|sample title template thing|g"
-  sed_creation="$(echo "s|{{ creation date }}|$(stat -c %y $input_file | sed 's/\s.*$//')|g")"
-  sed_modified="$(echo "s|{{ modified date }}|$(stat -c %y $input_file | sed 's/\s.*$//')|g")"
-  sed_string="$sed_title ; $sed_creation ; $sed_modified"
-}
-
-function generate-page {
-  html="$dir_temp$rel_url"
-  temp=$(mktemp) ; trap "rm -rf $temp" EXIT
-  cat "$dir_layouts/${layouts[i+1]}" > $html
-  sed -i "$sed_string" $html
-  eval $markdown_converter $input_file > $temp
-  sed -e '/{{ content }}/ {' -e "r $temp" -e 'd' -e '}' -i $html
-  eval $html_cleanup $html
-}
-
-function build-markdowns {
-  for (( i=0 ; i<${#layouts[@]} ; i=$((i+2)) )) ; do
-    for input_file in $(find "$dir_temp${layouts[i]}" -type f) ; do
-      if [[ $input_file == *$ext_markdown ]] ; then
-        rel_url="$(echo $input_file | sed "s|$dir_temp||g;s|$ext_markdown|$ext_html|g")"
-        if [[ $input_file -nt $dir_output$rel_url ]] ; then
-          generate-vars
-          generate-page
-        fi
-        rm -f $input_file
-      fi
-    done
+function defragment { # $1 = file to defragment
+  for frag in $(sed -nr 's/.*\{\{ frag (.*) \}\}.*/\1/p' $1) ; do
+    sed -e "/{{ frag $frag }}/ {" -e "r $dir_fragments/$frag" -e 'd' -e '}' -i $1
   done
 }
 
-function build-site {
-  for input_file in $(find "$dir_temp" -type f) ; do
-    output_file=$(echo $input_file | sed "s|$dir_temp|$dir_output|g")
-    if [[ $input_file -nt $output_file ]] ; then
-      cp $input_file $output_file
+function get-layout { # $1 = file to get layout for
+  path=${1%/*}
+  while [ ! -e $path/.layout.html ] ; do
+    path="$path/.."
+    if [[ $path -ef $dir_temp/.. ]] ; then
+      printf "\r$error\nmissing $dir_input/.layout.html file\n"
+      printf "exiting without building...\n" ; exit
     fi
   done
+  layout=$path/.layout.html
 }
 
-function clone-input {
-  tempd=$(mktemp -d)
-  trap "rm -rf $dir_temp" EXIT
-  cp -a "$dir_input/." $dir_temp
+function generate-a-markdown {
+  output="$(echo $input | sed "s|$ext_markdown|$ext_html|g")"
+  mark=$(mktemp) ; html=$(mktemp) ; trap "rm -rf $mark $html" EXIT
+  get-layout $input ; cat $layout > $html
+  replace-variables $html
+  defragment $input
+  eval $markdown_converter $input > $mark
+  sed -e '/{{ content }}/ {' -e "r $mark" -e 'd' -e '}' -i $html
+  eval $html_cleanup $html > $output
+  rm -rf $mark $html
+}
+
+function generate-markdowns {
+  printf "$doing build markdown pages "
+  for input in $(find "$dir_temp" -type f -wholename "*$ext_markdown") ; do
+    generate-a-markdown
+    rm -f $input
+  done
+  printf "\r$done\n"
+}
+
+function build-website {
+  printf "$doing build site "
+  for layout in $(find "$dir_temp" -type f -wholename "*.layout.html") ; do
+    rm -f $layout
+  done
+  for input in $(find "$dir_temp" -type f) ; do
+    output=$(echo $input | sed "s|$dir_temp|$dir_output|g")
+    cp $input $output
+  done
+  printf "\r$done\n"
+  rm -rf $dir_temp
+}
+
+function get-modified-files {
+  printf "$doing get modified files "
+  for input in $(find "$dir_temp" -type f) ; do
+    output="$(echo $input | sed "s|$dir_temp|$dir_output|g ; 
+                                 s|$ext_markdown|$ext_html|g")"
+    if [[ $input -ot $output ]] ; then
+      rm -rf $input
+    fi
+  done
+  printf "\r$done\n"
 }
 
 function copy-dir-structure {
+  printf "$doing copy input dir structure to output "
   dir_barncat=$(pwd)
   cd $dir_input
-  paths=$(find . -type d)
+  paths=$(find -type d)
   cd $dir_barncat ; cd $dir_output
   for path in $paths ; do
     mkdir -p $path
   done
   cd $dir_barncat
+  printf "\r$done\n"
 }
 
+function duplicate-input {
+  printf "$doing duplicate input for operation "
+  dir_temp=$(mktemp -d) ; trap "rm -rf $dir_temp" EXIT
+  cp -a "$dir_input/." $dir_temp
+  printf "\r$done\n"
+}
 
-function purge-site { # purge the site
-  printf "purging output..."
+function purge-site {
+  printf "$doing purge output "
   rm -f -r $dir_output/*
-  printf "\r$done purging output\n"
+  printf "\r$done\n"
 }
 
-function error-check {
-  printf "checking confif.sh... "
-  if [ -f ./config.sh ] ; then
-    source ./config.sh
-  else
-    printf "\n$error ./config.sh is missing!\nexiting...\n" ; exit
-  fi
-
-  for dir in $dir_input $dir_output $dir_layouts $dir_scripts ; do
-    if [ ! -d $dir ] ; then
-      printf "\n$error $dir directory does not exist, please create it"
-    fi
+function defragment-layouts {
+  for layout in $(find "$dir_temp" -type f -wholename "*.layout.html") ; do
+    defragment $layout
   done
 }
 
+function print-commands {
+  printf "barncat commands: ./barncat <command>\n"
+  printf " build        incremental build\n"
+  printf " full         full build, as opposed to an incremental build\n"
+  exit 0
+}
+
 function main {
-  clone-input #         $dir_input/files.all -> $dir_temp/files.all
-  copy-dir-structure #     $dir_input/paths/ -> $dir_output/paths/
-  execute-scripts #              eval $dir_scripts/script.sh
-  build-markdowns #        $dir_temp/file.md -> $dir_temp/file.html
-  build-site #            $dir_temp/file.all -> $dir_output/file.all
-  rm -rf $dir_temp
+  duplicate-input #         duplicate $dir_input/files.all to $dir_temp/files.all
+  copy-dir-structure #     copy dir_input/paths/ -> $dir_output/paths/
+  defragment-layouts #        $dir_input/*/.layout.html -> $dir_input/*/.layout.html
+  get-modified-files #    rm $dir_temp/file if older than $dir_output/file
+  generate-markdowns #
+  build-website #        $dir_temp/file.md -> $dir_temp/file.html
 }
 
 case "$1" in
-  build) source ./config.sh ; main ;;
-  full) source ./config.sh ; purge-site ; main ;;
-  error-check) error-check ;;
+  build) main ;;
+  full) purge-site ; main ;;
   *) print-commands ;;
 
 esac
