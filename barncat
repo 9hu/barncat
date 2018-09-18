@@ -6,7 +6,6 @@
 # -bf-      `-    \`_`"'-
 
 # config -----------------------------------------------------------
-
 ext_markdown='.md'
 ext_html='.html'
 
@@ -15,8 +14,10 @@ html_cleanup='tidy -q --show-warnings no -w 0 --tidy-mark no'
 
 dir_input='./input'
 dir_output='./output'
+dir_layouts='./layouts'
 dir_fragments='./fragments'
 
+verbose=true # default verbosity
 #-------------------------------------------------------------------
 
 working="\033[0;93mworking\033[0m"
@@ -25,30 +26,32 @@ removed="\033[0;32mremoved\033[0m"
 error="\033[0;31merror!!\033[0m"
 arrow="\033[0;36m->\033[0m"
 
-function replace-variables { # $1 = file to replace variables
-  var_sed="
-  s|{{ title }}|sample title template thing|g ;
-  s|{{ modified date }}|$(date -r $input +"%Y-%d-%m")|g
-  "
-  sed -i -e "$var_sed" $1
-}
-
 function defragment { # $1 = file to defragment
   for frag in $(sed -nr 's/.*\{\{ frag (.*) \}\}.*/\1/p' $1) ; do
     sed -e "/{{ frag $frag }}/ {" -e "r $dir_fragments/$frag" -e 'd' -e '}' -i $1
   done
 }
 
+function replace-variables { # $1 = file to replace variables
+  var_sed="
+  s|{{ title }}|placeholder|g ;
+  s|{{ modified date }}|$(date -r $input +"%Y-%d-%m")|g ;
+  s|{{ current date}}|$(date +%Y-%m-%d)|g
+  "
+  sed -i -e "$var_sed" $1
+}
+
 function get-layout { # $1 = file to get layout for
-  path=${1%/*}
-  while [ ! -e $path/.layout.html ] ; do
-    path="$path/.."
-    if [[ $path -ef $dir_temp/.. ]] ; then
-      printf "\r$error\nmissing $dir_input/.layout.html file\n"
-      printf "exiting without building...\n" ; exit
-    fi
-  done
-  layout=$path/.layout.html
+  path=$(echo ${1%/*} | sed "s|$dir_input|$dir_layouts|g ; s|/|-|g")
+  if [[ -f $path$ext_html ]] ; then
+    layout=$path
+  else
+    layout=$dir_layouts/default.html
+  fi
+  if [[ ! -f $layout ]] ; then
+    printf "\r$error\nmissing layout file $layout\n"
+    printf "exiting without building...\n" ; exit
+  fi
 }
 
 function generate-markdown {
@@ -62,10 +65,31 @@ function generate-markdown {
 
   cat $input > $mark
   defragment $mark
+
   eval $markdown_converter $mark > $conver
   sed -e '/{{ content }}/ {' -e "r $conver" -e 'd' -e '}' -i $html
   eval $html_cleanup $html > $output
   rm -rf $mark $html $convar
+}
+
+function generate-file {
+  if $verbose ; then 
+    printf "$working ${input#"$dir_input/"} $arrow ${output#"$dir_output/"} "
+  fi
+
+  if [[ ! -d ${output%/*} ]] ; then
+    mkdir -p ${output%/*}
+  fi
+
+  if [[ $markdown ]] ; then
+    generate-markdown
+  else
+    cp $input $output
+  fi
+
+  if $verbose ; then
+    printf "\r$created\n"
+  fi
 }
 
 function remove-files {
@@ -81,27 +105,10 @@ function remove-files {
   find $dir_output -type d -empty -delete
 }
 
-function generate-file {
-  if $verbose ; then 
-    printf "$working ${input#"$dir_input"} $arrow ${output#"$dir_output"}"
-  fi
-
-  if [[ ! -d ${output%/*} ]] ; then
-    mkdir -p ${output%/*}
-  fi
-
-  if [[ $markdown ]] ; then
-    generate-markdown
-  else
-    cp $input $output
-  fi
-
-  if $verbose ; then printf "\r$created\n" ; fi
-}
-
 function build-website {
   remove-files
-  for input in $(find "$dir_input" -type f -not -name "*.layout.html") ; do
+  find $dir_layouts -type d -empty -delete ; mkdir -p $dir_layouts
+  for input in $(find "$dir_input" -type f) ; do
     output=$(echo $input | sed "s|$dir_input|$dir_output|g")
     if [[ $input == *$ext_markdown ]] ; then
       markdown=true
@@ -115,5 +122,26 @@ function build-website {
   done
 }
 
-verbose=true
+function print-usage {
+  printf "barncat [-h|--help]    (print this output)\n"
+  printf "        [-f|--full]    (full rebuild of the site)\n"
+  printf "        [-v|--verbose] (print every file created and removed)\n"
+  printf "        [-q|--quiet]   (print nothing (but errors!))\n"
+}
+
+while test $# -gt 0; do
+  case "$1" in
+    -q|--quiet)
+      verbose=false ; shift ;;
+    -v|--verbose)
+      verbose=true ; shift ;;
+    -f|--full)
+      rm -rf $dir_output/* ; shift ;;
+    -h|--help)
+      print-usage ; exit ;;
+    *)
+      printf "$error $1 is not a valid command!\n\n" ; print-usage ; exit ;;
+  esac
+done
+
 build-website
