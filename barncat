@@ -19,11 +19,13 @@ dir_fragments='./fragments'
 
 #-------------------------------------------------------------------
 
-doing="\033[0;93mdoing\033[0m"
-done="\033[0;32mdone!\033[0m"
-error="\033[0;31merror\033[0m"
+working="\033[0;93mworking\033[0m"
+created="\033[0;32mcreated\033[0m"
+removed="\033[0;32mremoved\033[0m"
+error="\033[0;31merror!!\033[0m"
+arrow="\033[0;36m->\033[0m"
 
-function replace-variables { # $1 = file to replace variables in
+function replace-variables { # $1 = file to replace variables
   var_sed="
   s|{{ title }}|sample title template thing|g ;
   s|{{ modified date }}|$(date -r $input +"%Y-%d-%m")|g
@@ -49,103 +51,69 @@ function get-layout { # $1 = file to get layout for
   layout=$path/.layout.html
 }
 
-function generate-a-markdown {
-  output="$(echo $input | sed "s|$ext_markdown|$ext_html|g")"
-  mark=$(mktemp) ; html=$(mktemp) ; trap "rm -rf $mark $html" EXIT
-  get-layout $input ; cat $layout > $html
+function generate-markdown {
+  mark=$(mktemp) ; html=$(mktemp) ; conver=$(mktemp)
+  trap "rm -rf $mark $html $conver" EXIT
+
+  get-layout $input
+  cat $layout > $html
+  defragment $html
   replace-variables $html
-  defragment $input
-  eval $markdown_converter $input > $mark
-  sed -e '/{{ content }}/ {' -e "r $mark" -e 'd' -e '}' -i $html
+
+  cat $input > $mark
+  defragment $mark
+  eval $markdown_converter $mark > $conver
+  sed -e '/{{ content }}/ {' -e "r $conver" -e 'd' -e '}' -i $html
   eval $html_cleanup $html > $output
-  rm -rf $mark $html
+  rm -rf $mark $html $convar
 }
 
-function generate-markdowns {
-  printf "$doing build markdown pages "
-  for input in $(find "$dir_temp" -type f -wholename "*$ext_markdown") ; do
-    generate-a-markdown
-    rm -f $input
+function remove-files {
+  for output in $(find "$dir_output" -type f) ; do
+    input1=$(echo $output | sed "s|$dir_output|$dir_input|g")
+    input2=$(echo $input1 | sed "s|$ext_html|$ext_markdown|g")
+    if [ ! -e $input1 ] && [ ! -e $input2 ] ; then
+      printf "$working $output"
+      rm -rf $output
+      printf "\r$removed\n"
+    fi
   done
-  printf "\r$done\n"
+  find $dir_output -type d -empty -delete
+}
+
+function generate-file {
+  if $verbose ; then 
+    printf "$working ${input#"$dir_input"} $arrow ${output#"$dir_output"}"
+  fi
+
+  if [[ ! -d ${output%/*} ]] ; then
+    mkdir -p ${output%/*}
+  fi
+
+  if [[ $markdown ]] ; then
+    generate-markdown
+  else
+    cp $input $output
+  fi
+
+  if $verbose ; then printf "\r$created\n" ; fi
 }
 
 function build-website {
-  printf "$doing build site "
-  for layout in $(find "$dir_temp" -type f -wholename "*.layout.html") ; do
-    rm -f $layout
-  done
-  for input in $(find "$dir_temp" -type f) ; do
-    output=$(echo $input | sed "s|$dir_temp|$dir_output|g")
-    cp $input $output
-  done
-  printf "\r$done\n"
-  rm -rf $dir_temp
-}
-
-function get-modified-files {
-  printf "$doing get modified files "
-  for input in $(find "$dir_temp" -type f) ; do
-    output="$(echo $input | sed "s|$dir_temp|$dir_output|g ; 
-                                 s|$ext_markdown|$ext_html|g")"
-    if [[ $input -ot $output ]] ; then
-      rm -rf $input
+  remove-files
+  for input in $(find "$dir_input" -type f -not -name "*.layout.html") ; do
+    output=$(echo $input | sed "s|$dir_input|$dir_output|g")
+    if [[ $input == *$ext_markdown ]] ; then
+      markdown=true
+      output=$(echo $output | sed "s|$ext_markdown|$ext_html|g")
+    else
+      markdown=false
+    fi
+    if [[ $input -nt $output ]] ; then
+      generate-file
     fi
   done
-  printf "\r$done\n"
 }
 
-function copy-dir-structure {
-  printf "$doing copy input dir structure to output "
-  dir_barncat=$(pwd)
-  cd $dir_input
-  paths=$(find -type d)
-  cd $dir_barncat ; cd $dir_output
-  for path in $paths ; do
-    mkdir -p $path
-  done
-  cd $dir_barncat
-  printf "\r$done\n"
-}
-
-function duplicate-input {
-  printf "$doing duplicate input for operation "
-  dir_temp=$(mktemp -d) ; trap "rm -rf $dir_temp" EXIT
-  cp -a "$dir_input/." $dir_temp
-  printf "\r$done\n"
-}
-
-function purge-site {
-  printf "$doing purge output "
-  rm -f -r $dir_output/*
-  printf "\r$done\n"
-}
-
-function defragment-layouts {
-  for layout in $(find "$dir_temp" -type f -wholename "*.layout.html") ; do
-    defragment $layout
-  done
-}
-
-function print-commands {
-  printf "barncat commands: ./barncat <command>\n"
-  printf " build        incremental build\n"
-  printf " full         full build, as opposed to an incremental build\n"
-  exit 0
-}
-
-function main {
-  duplicate-input #         duplicate $dir_input/files.all to $dir_temp/files.all
-  copy-dir-structure #     copy dir_input/paths/ -> $dir_output/paths/
-  defragment-layouts #        $dir_input/*/.layout.html -> $dir_input/*/.layout.html
-  get-modified-files #    rm $dir_temp/file if older than $dir_output/file
-  generate-markdowns #
-  build-website #        $dir_temp/file.md -> $dir_temp/file.html
-}
-
-case "$1" in
-  build) main ;;
-  full) purge-site ; main ;;
-  *) print-commands ;;
-
-esac
+verbose=true
+build-website
