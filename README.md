@@ -19,7 +19,7 @@ There's a config section at the top of `barncat` where you can specify file exte
 Fragments are stored in `$dir_fragments` and can be inserted into either layouts or Markdown files.
 Lines in either of these formatted:
 
-  {{ frag file.txt }}
+    {{ frag file.txt }}
 
 will be replaced with the file contents of `$dir_fragments/file.txt`.
 
@@ -41,12 +41,12 @@ A list of variables that can appear in layouts that are taken from the markdown 
 
 ## Usage
 
-  chmod +x barncat
-  ./barncat
+    chmod +x barncat
+    ./barncat
 
 For flags:
 
-  ./barncat --help
+    ./barncat --help
 
 ### Example
 
