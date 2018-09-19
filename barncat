@@ -5,7 +5,8 @@
 #     `-.-' \ )-`( , o o)
 # -bf-      `-    \`_`"'-
 
-# config -----------------------------------------------------------
+# config ---------------------------------------------------------------
+
 ext_markdown='.md'
 ext_html='.html'
 
@@ -17,8 +18,10 @@ dir_output='./output'
 dir_layouts='./layouts'
 dir_fragments='./fragments'
 
+always_refresh='/index.md'
+
 verbose=true # default verbosity
-#-------------------------------------------------------------------
+#-----------------------------------------------------------------------
 
 working="\033[0;93mworking\033[0m"
 created="\033[0;32mcreated\033[0m"
@@ -42,14 +45,14 @@ function replace-variables { # $1 = file to replace variables
 }
 
 function get-layout { # $1 = file to get layout for
-  path=$(echo ${1%/*} | sed "s|$dir_input|$dir_layouts|g ; s|/|-|g")
+  path=$(echo ${1%/*} | sed "s|$dir_input/|$dir_layouts/.|g ; s|/|-|g")
   if [[ -f $path$ext_html ]] ; then
     layout=$path
   else
-    layout=$dir_layouts/default.html
+    layout=$dir_layouts/.default.html
   fi
   if [[ ! -f $layout ]] ; then
-    printf "\r$error\nmissing layout file $layout\n"
+    printf "\r$error\nmissing layout file $dir_layouts/default.html\n"
     printf "exiting without building...\n" ; exit
   fi
 }
@@ -60,7 +63,6 @@ function generate-markdown {
 
   get-layout $input
   cat $layout > $html
-  defragment $html
   replace-variables $html
 
   cat $input > $mark
@@ -105,17 +107,34 @@ function remove-files {
   find $dir_output -type d -empty -delete
 }
 
+function build-layouts {
+  for layout in $(find $dir_layouts -type f ! -name ".*") ; do
+    cached_layout=$(echo $layout | sed "s|$dir_layouts/|$dir_layouts/.|g")
+    cat $layout > $cached_layout
+    defragment $cached_layout
+  done
+}
+
+function get-input-data {
+  output=$(echo $input | sed "s|$dir_input|$dir_output|g")
+  if [[ $input == *$ext_markdown ]] ; then
+    markdown=true
+    output=$(echo $output | sed "s|$ext_markdown|$ext_html|g")
+  else
+    markdown=false
+  fi
+}
+
 function build-website {
+  build-layouts
   remove-files
-  find $dir_layouts -type d -empty -delete ; mkdir -p $dir_layouts
+  for input_file in $always_refresh ; do
+    input=$dir_input$input_file
+    get-input-data
+    generate-file
+  done
   for input in $(find "$dir_input" -type f) ; do
-    output=$(echo $input | sed "s|$dir_input|$dir_output|g")
-    if [[ $input == *$ext_markdown ]] ; then
-      markdown=true
-      output=$(echo $output | sed "s|$ext_markdown|$ext_html|g")
-    else
-      markdown=false
-    fi
+    get-input-data
     if [[ $input -nt $output ]] ; then
       generate-file
     fi
