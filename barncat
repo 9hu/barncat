@@ -37,7 +37,7 @@ function defragment { # $1 = file to defragment
 
 function replace-variables { # $1 = file to replace variables
   var_sed="
-  s|{{ title }}|placeholder|g ;
+  s|{{ title }}|$(head -1 $input | sed 's/^[#]*[ ]//')|g ;
   s|{{ modified date }}|$(date -r $input +"%Y-%d-%m")|g ;
   s|{{ current date}}|$(date +%Y-%m-%d)|g
   "
@@ -45,9 +45,10 @@ function replace-variables { # $1 = file to replace variables
 }
 
 function get-layout { # $1 = file to get layout for
-  path=$(echo ${1%/*} | sed "s|$dir_input/|$dir_layouts/.|g ; s|/|-|g")
+  path=$(echo ${1%/*} | sed "s|$dir_input/||g ; s|/|-|g")
+  path="$dir_layouts/.$path"
   if [[ -f $path$ext_html ]] ; then
-    layout=$path
+    layout=$path$ext_html
   else
     layout=$dir_layouts/.default.html
   fi
